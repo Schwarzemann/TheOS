@@ -1,0 +1,2 @@
+TheOS 0.1
+x86, 32-bit protected mode

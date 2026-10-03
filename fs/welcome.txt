@@ -1,0 +1,4 @@
+Welcome to TheOS!
+
+This file is being read straight off disk by TheOS's own ATA PIO
+driver and TOFS filesystem reader.

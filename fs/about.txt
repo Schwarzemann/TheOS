@@ -1,0 +1,6 @@
+TheOS is a relatively small x86 operating system:
+
+  - two-stage real-mode bootloader
+  - protected-mode kernel
+  - interrupts, paging, a heap, ring3 user mode and a round-robin
+    scheduler, a PIO ATA driver and a very tiny read-only filesystem
