@@ -1,6 +1,7 @@
 #include <keyboard.h>
 #include <isr.h>
 #include <io.h>
+#include <serial.h>
 
 #define KBD_DATA_PORT   0x60
 
@@ -78,8 +79,25 @@ static void kbd_irq(registers_t *regs) {
     }
 }
 
+/* COM1 receive (IRQ4): type into the shell through
+ * QEMU's -serial stdio. Feeds the same buffer as the PS/2 keyboard. */
+static void serial_irq(registers_t *regs) {
+    (void)regs;
+    while (serial_rx_ready()) {
+        char c = serial_getc();
+        if (c == '\r') {
+            c = '\n';  /* terminals send CR for Enter */
+        } else if (c == 0x7F) {
+            c = '\b';  /* terminals send DEL for Backspace */
+        }
+        push(c);
+    }
+}
+
 void kbd_init(void) {
     irq_register(1, kbd_irq);
+    irq_register(4, serial_irq);
+    serial_enable_rx_irq();
 }
 
 char kbd_getc(void) {
@@ -90,3 +108,4 @@ char kbd_getc(void) {
     tail = (tail + 1) % KBD_BUF_SIZE;
     return c;
 }
+

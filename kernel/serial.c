@@ -18,6 +18,18 @@ static int tx_empty(void) {
     return inb(COM1 + 5) & 0x20;
 }
 
+void serial_enable_rx_irq(void) {
+    outb(COM1 + 1, 0x01); /* interrupt when a byte arrives (IRQ4) */
+}
+
+int serial_rx_ready(void) {
+    return inb(COM1 + 5) & 0x01;
+}
+
+char serial_getc(void) {
+    return (char)inb(COM1);
+}
+
 void serial_putc(char c) {
     while (!tx_empty()) {
     }
