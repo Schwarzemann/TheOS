@@ -25,8 +25,7 @@ These will be added in the future:
 - **No demand paging, swapping, or copy-on-write.** Every mapped page
   is backed by a real frame up front; a page fault is always a bug and
   always panics.
-- **Filesystem is read-only** and fixed at build time - no write
-  support, no subdirectories, no dynamic file creation at runtime.
+- **Filesystem supports persistent read/write** but still fixed at build time.
 - **No ELF loading.** User-mode code is kernel-linked and jumped to
   directly; there's no loader for separately-compiled user binaries.
 - **Single CPU, no SMP.**
