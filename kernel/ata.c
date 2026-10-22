@@ -16,7 +16,9 @@
 #define ATA_SR_DRQ 0x08
 #define ATA_SR_BSY 0x80
 
-#define ATA_CMD_READ 0x20
+#define ATA_CMD_READ         0x20
+#define ATA_CMD_WRITE        0x30
+#define ATA_CMD_CACHE_FLUSH  0xE7
 
 static void ata_select(uint32_t lba) {
     outb(ATA_DRIVE_HEAD, (uint8_t)(0xE0 | ((lba >> 24) & 0x0F)));
@@ -56,4 +58,54 @@ void ata_read(uint32_t lba, uint32_t count, void *buf) {
     for (uint32_t i = 0; i < count; i++) {
         ata_read_one(lba + i, dst + i * 256);
     }
+}
+
+static void ata_wait_ready(void) {
+    for (;;) {
+        uint8_t status = inb(ATA_STATUS);
+        if (status & ATA_SR_ERR) {
+            panic("ata_write: device reported an error");
+        }
+        if (!(status & ATA_SR_BSY)) {
+            break;
+        }
+    }
+}
+
+static void ata_write_one(uint32_t lba, const uint16_t *buf) {
+    ata_select(lba);
+
+    outb(ATA_FEATURES, 0x00);
+    outb(ATA_SECCOUNT, 1);
+    outb(ATA_LBA_LOW, (uint8_t)lba);
+    outb(ATA_LBA_MID, (uint8_t)(lba >> 8));
+    outb(ATA_LBA_HIGH, (uint8_t)(lba >> 16));
+    outb(ATA_COMMAND, ATA_CMD_WRITE);
+
+    for (;;) {
+        uint8_t status = inb(ATA_STATUS);
+        if (status & ATA_SR_ERR) {
+            panic("ata_write: device reported an error");
+        }
+        if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRQ)) {
+            break;
+        }
+    }
+
+    for (int i = 0; i < 256; i++) {
+        outw(ATA_DATA, buf[i]);
+    }
+
+    ata_wait_ready();
+}
+
+void ata_write(uint32_t lba, uint32_t count, const void *buf) {
+    const uint16_t *src = (const uint16_t *)buf;
+    for (uint32_t i = 0; i < count; i++) {
+        ata_write_one(lba + i, src + i * 256);
+    }
+    /* Flush the write cache so the data is actually durable before we
+     * report success (matters for the backing disk image, not just RAM). */
+    outb(ATA_COMMAND, ATA_CMD_CACHE_FLUSH);
+    ata_wait_ready();
 }

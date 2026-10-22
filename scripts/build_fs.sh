@@ -9,4 +9,4 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/layout.sh"
 
 mkdir -p "$BUILD_DIR"
-python3 "$SCRIPT_DIR/mkfs_tofs.py" "$BUILD_DIR/fs.img" "$FS_DIR" "$FS_BASE_LBA"
+python3 "$SCRIPT_DIR/mkfs_tofs.py" "$BUILD_DIR/fs.img" "$FS_DIR" "$FS_BASE_LBA" "$FS_TOTAL_SECTORS"

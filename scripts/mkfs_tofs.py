@@ -2,14 +2,18 @@
 """Builds a TOFS (TheOS File System) image from a directory tree.
 
 Layout (all offsets relative to the start of this image):
-  sector 0        : superblock - magic "TOFS", uint32 entry_count
+  sector 0        : superblock - magic "TOFS", uint32 entry_count,
+                      uint32 next_free_lba, uint32 free_count, then up to
+                      32 free extents (uint32 start_lba, uint32 count)
   sectors 1-5      : directory - up to 64 entries, 40 bytes each:
-                      name[24], uint32 type (0=file, 1=dir),
+                      name[24], uint32 type (0=file, 1=dir, 2=free slot),
                       int32 parent (entry index, or -1 for the root),
                       uint32 start_lba (absolute disk LBA, files only),
                       uint32 size_bytes (files only)
   sector 6+        : file data, one file after another, each file
-                      starting on a sector boundary
+                      starting on a sector boundary, followed by zeroed
+                      free space out to fs_total_sectors so the kernel's
+                      allocator has room to create and grow files later
 """
 import sys
 import struct
@@ -54,13 +58,14 @@ def path_of(entries, index):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(f"usage: {sys.argv[0]} <output.img> <fs_dir> <fs_base_lba>", file=sys.stderr)
+    if len(sys.argv) != 5:
+        print(f"usage: {sys.argv[0]} <output.img> <fs_dir> <fs_base_lba> <fs_total_sectors>", file=sys.stderr)
         return 1
 
     out_path = sys.argv[1]
     fs_dir = pathlib.Path(sys.argv[2])
     fs_base_lba = int(sys.argv[3])
+    fs_total_sectors = int(sys.argv[4])
 
     entries = []
     walk(fs_dir, ROOT_PARENT, entries)
@@ -82,8 +87,18 @@ def main():
             data += b"\x00" * pad
             next_lba += (len(content) + pad) // SECTOR_SIZE
 
-    superblock = b"TOFS" + struct.pack("<I", len(entries))
-    superblock += b"\x00" * (SECTOR_SIZE - len(superblock))
+    used_sectors = next_lba - fs_base_lba
+    if used_sectors > fs_total_sectors:
+        print(f"error: fs data ({used_sectors} sectors) exceeds the reserved "
+              f"region ({fs_total_sectors} sectors) - raise FS_TOTAL_SECTORS "
+              f"in scripts/layout.sh and kernel/include/fs.h", file=sys.stderr)
+        return 1
+
+    superblock = bytearray(SECTOR_SIZE)
+    superblock[0:4] = b"TOFS"
+    struct.pack_into("<I", superblock, 4, len(entries))
+    struct.pack_into("<I", superblock, 8, next_lba)  # next_free_lba
+    struct.pack_into("<I", superblock, 12, 0)         # free_count (empty free list)
 
     directory = bytearray(DIR_SECTORS * SECTOR_SIZE)
     for i, e in enumerate(entries):
@@ -98,13 +113,17 @@ def main():
         f.write(superblock)
         f.write(directory)
         f.write(data)
+        total_bytes = fs_total_sectors * SECTOR_SIZE
+        written = len(superblock) + len(directory) + len(data)
+        if written < total_bytes:
+            f.write(b"\x00" * (total_bytes - written))
 
     for i, e in enumerate(entries):
         kind = "DIR " if e["type"] == TYPE_DIR else "FILE"
         suffix = "/" if e["type"] == TYPE_DIR else ""
         print(f"  {kind} {path_of(entries, i) + suffix:<30} size={e['size']}")
-    total_sectors = 1 + DIR_SECTORS + len(data) // SECTOR_SIZE
-    print(f"TOFS image: {len(entries)} entries, {total_sectors} sectors")
+    print(f"TOFS image: {len(entries)} entries, {used_sectors} sectors used, "
+          f"{fs_total_sectors} sectors reserved")
     return 0
 
 

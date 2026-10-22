@@ -3,6 +3,7 @@ SECTOR_SIZE=512
 STAGE2_SECTORS=4
 KERNEL_SECTORS=256
 FS_DIR_SECTORS=6          # 1 superblock + 5 directory sectors
+FS_TOTAL_SECTORS=8192     # 4 MiB reserved for the whole TOFS region (data + free space)
 
 BOOT_LBA=0
 STAGE2_LBA=1

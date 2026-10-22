@@ -2,6 +2,7 @@
 
 #include <bin.h>
 #include <cmds.h>
+#include <fs.h>
 #include <string.h>
 #include <vga.h>
 
@@ -23,8 +24,31 @@ static const command_t commands[] = {
     { "disk",    cmd_disk },
     { "uptime",  cmd_uptime },
     { "meminfo", cmd_meminfo },
+    { "touch",   cmd_touch },
+    { "mkdir",   cmd_mkdir },
+    { "rm",      cmd_rm },
+    { "rmdir",   cmd_rmdir },
+    { "write",   cmd_write },
+    { "append",  cmd_append },
+    { "mv",      cmd_mv },
+    { "cp",      cmd_cp },
 };
 #define COMMAND_COUNT (sizeof(commands) / sizeof(commands[0]))
+
+void print_fs_error(const char *op, int err) {
+    vga_print(op);
+    switch (err) {
+        case FS_ERR_EXISTS:   vga_print(": already exists\n"); break;
+        case FS_ERR_NOTDIR:   vga_print(": not a directory\n"); break;
+        case FS_ERR_ISDIR:    vga_print(": is a directory\n"); break;
+        case FS_ERR_FULL:     vga_print(": directory is full\n"); break;
+        case FS_ERR_NAME:     vga_print(": invalid name\n"); break;
+        case FS_ERR_NOSPACE:  vga_print(": disk is full\n"); break;
+        case FS_ERR_NOTEMPTY: vga_print(": directory is not empty\n"); break;
+        case FS_ERR_CYCLE:    vga_print(": cannot move a directory into itself\n"); break;
+        default:              vga_print(": error\n"); break;
+    }
+}
 
 void run_command(const char *cmd) {
     if (cmd[0] == '\0') {

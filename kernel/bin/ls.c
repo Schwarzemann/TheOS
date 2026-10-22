@@ -9,7 +9,7 @@ void cmd_ls(const char *arg) {
     uint32_t count = fs_entry_count();
     for (uint32_t i = 0; i < count; i++) {
         const fs_entry_t *e = fs_entry_at(i);
-        if (e->parent != dir) {
+        if (e->parent != dir || e->type == FS_TYPE_FREE) {
             continue;
         }
         vga_print(e->name);
