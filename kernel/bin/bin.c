@@ -2,6 +2,7 @@
 
 #include <bin.h>
 #include <cmds.h>
+#include <cwd.h>
 #include <fs.h>
 #include <string.h>
 #include <vga.h>
@@ -48,6 +49,30 @@ void print_fs_error(const char *op, int err) {
         case FS_ERR_CYCLE:    vga_print(": cannot move a directory into itself\n"); break;
         default:              vga_print(": error\n"); break;
     }
+}
+
+int32_t file_for_write(const char *op, const char *path) {
+    int32_t parent;
+    char name[FS_NAME_LEN];
+    int err = fs_split_path(cwd_get(), path, &parent, name);
+    if (err < 0) {
+        print_fs_error(op, err);
+        return err;
+    }
+
+    int32_t index = fs_find_child(parent, name);
+    if (index == FS_NOT_FOUND) {
+        index = fs_create(parent, name);
+        if (index < 0) {
+            print_fs_error(op, index);
+        }
+        return index;
+    }
+    if (fs_is_dir(index)) {
+        print_fs_error(op, FS_ERR_ISDIR);
+        return FS_ERR_ISDIR;
+    }
+    return index;
 }
 
 void run_command(const char *cmd) {

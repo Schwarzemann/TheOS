@@ -4,9 +4,11 @@
 #include <serial.h>
 #include <panic.h>
 #include <heap.h>
+#include <sync.h>
 
 #define FS_DIR_SECTORS 5
 #define FS_RECORD_SIZE 40
+#define FS_PATH_MAX 128
 
 /* Superblock layout (sector 0), written by fs_sync_superblock and by
  * scripts/mkfs_tofs.py:
@@ -28,6 +30,10 @@ static uint32_t entry_count;
 static uint32_t next_free_lba;
 static free_extent_t free_extents[FS_MAX_FREE_EXTENTS];
 static uint32_t free_count;
+
+/* Guards everything above. Public functions take it and call the static
+ * versions, which assume it is held. */
+static mutex_t fs_lock;
 
 static void fs_sync_superblock(void) {
     uint8_t sb[512];
@@ -181,7 +187,7 @@ const fs_entry_t *fs_entry_at(uint32_t index) {
     return &entries[index];
 }
 
-int fs_is_dir(int32_t index) {
+static int is_dir(int32_t index) {
     if (index == FS_ROOT) {
         return 1;
     }
@@ -191,7 +197,7 @@ int fs_is_dir(int32_t index) {
     return entries[index].type == FS_TYPE_DIR;
 }
 
-int32_t fs_find_child(int32_t dir, const char *name) {
+static int32_t find_child(int32_t dir, const char *name) {
     for (uint32_t i = 0; i < entry_count; i++) {
         if (entries[i].type != FS_TYPE_FREE && entries[i].parent == dir &&
             strcmp(entries[i].name, name) == 0) {
@@ -201,7 +207,7 @@ int32_t fs_find_child(int32_t dir, const char *name) {
     return FS_NOT_FOUND;
 }
 
-int fs_resolve(int32_t from, const char *path, int32_t *out_index) {
+static int resolve(int32_t from, const char *path, int32_t *out_index) {
     int32_t cur = (path[0] == '/') ? FS_ROOT : from;
     const char *p = (path[0] == '/') ? path + 1 : path;
 
@@ -227,10 +233,10 @@ int fs_resolve(int32_t from, const char *path, int32_t *out_index) {
             }
             continue;
         }
-        if (!fs_is_dir(cur)) {
+        if (!is_dir(cur)) {
             return 0;
         }
-        int32_t child = fs_find_child(cur, comp);
+        int32_t child = find_child(cur, comp);
         if (child == FS_NOT_FOUND) {
             return 0;
         }
@@ -245,19 +251,19 @@ uint32_t fs_sectors(const fs_entry_t *entry) {
     return (entry->size_bytes + 511) / 512;
 }
 
-uint32_t fs_read(const fs_entry_t *entry, void *buf) {
+static uint32_t read_entry(const fs_entry_t *entry, void *buf) {
     ata_read(entry->start_lba, fs_sectors(entry), buf);
     return entry->size_bytes;
 }
 
-static int32_t fs_new_entry(int32_t parent, const char *name, uint32_t type) {
-    if (!fs_is_dir(parent)) {
+static int32_t new_entry(int32_t parent, const char *name, uint32_t type) {
+    if (!is_dir(parent)) {
         return FS_ERR_NOTDIR;
     }
     if (!fs_valid_name(name)) {
         return FS_ERR_NAME;
     }
-    if (fs_find_child(parent, name) != FS_NOT_FOUND) {
+    if (find_child(parent, name) != FS_NOT_FOUND) {
         return FS_ERR_EXISTS;
     }
 
@@ -288,15 +294,7 @@ static int32_t fs_new_entry(int32_t parent, const char *name, uint32_t type) {
     return idx;
 }
 
-int32_t fs_create(int32_t parent, const char *name) {
-    return fs_new_entry(parent, name, FS_TYPE_FILE);
-}
-
-int32_t fs_mkdir(int32_t parent, const char *name) {
-    return fs_new_entry(parent, name, FS_TYPE_DIR);
-}
-
-int fs_write_file(int32_t index, const void *data, uint32_t size, int mode) {
+static int write_file(int32_t index, const void *data, uint32_t size, int mode) {
     if (index < 0 || (uint32_t)index >= entry_count || entries[index].type == FS_TYPE_FREE) {
         return FS_ERR_NAME;
     }
@@ -319,7 +317,7 @@ int fs_write_file(int32_t index, const void *data, uint32_t size, int mode) {
         }
         memset(buf, 0, new_sectors * 512);
         if (old_size > 0) {
-            fs_read(e, buf);
+            read_entry(e, buf);
         }
         memcpy(buf + old_size, data, size);
     }
@@ -350,7 +348,7 @@ int fs_write_file(int32_t index, const void *data, uint32_t size, int mode) {
     return FS_OK;
 }
 
-int fs_delete(int32_t index) {
+static int delete_entry(int32_t index) {
     if (index == FS_ROOT || index < 0 || (uint32_t)index >= entry_count) {
         return FS_ERR_NAME;
     }
@@ -383,11 +381,11 @@ int fs_delete(int32_t index) {
     return FS_OK;
 }
 
-int fs_rename(int32_t index, int32_t new_parent, const char *new_name) {
+static int rename_entry(int32_t index, int32_t new_parent, const char *new_name) {
     if (index < 0 || (uint32_t)index >= entry_count || entries[index].type == FS_TYPE_FREE) {
         return FS_ERR_NAME;
     }
-    if (!fs_is_dir(new_parent)) {
+    if (!is_dir(new_parent)) {
         return FS_ERR_NOTDIR;
     }
     if (!fs_valid_name(new_name)) {
@@ -404,7 +402,7 @@ int fs_rename(int32_t index, int32_t new_parent, const char *new_name) {
         }
     }
 
-    int32_t existing = fs_find_child(new_parent, new_name);
+    int32_t existing = find_child(new_parent, new_name);
     if (existing != FS_NOT_FOUND && existing != index) {
         return FS_ERR_EXISTS;
     }
@@ -415,4 +413,102 @@ int fs_rename(int32_t index, int32_t new_parent, const char *new_name) {
 
     fs_sync_directory();
     return FS_OK;
+}
+
+int fs_is_dir(int32_t index) {
+    mutex_lock(&fs_lock);
+    int result = is_dir(index);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int32_t fs_find_child(int32_t dir, const char *name) {
+    mutex_lock(&fs_lock);
+    int32_t result = find_child(dir, name);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int fs_resolve(int32_t from, const char *path, int32_t *out_index) {
+    mutex_lock(&fs_lock);
+    int result = resolve(from, path, out_index);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int fs_split_path(int32_t from, const char *path, int32_t *out_parent, char *out_name) {
+    size_t end = strlen(path);
+    while (end > 1 && path[end - 1] == '/') {
+        end--;
+    }
+    size_t name_start = end;
+    while (name_start > 0 && path[name_start - 1] != '/') {
+        name_start--;
+    }
+
+    size_t name_len = end - name_start;
+    if (name_len == 0 || name_len >= FS_NAME_LEN) {
+        return FS_ERR_NAME;
+    }
+    memcpy(out_name, path + name_start, name_len);
+    out_name[name_len] = '\0';
+
+    if (name_start == 0) {
+        *out_parent = from;
+        return FS_OK;
+    }
+
+    char dir[FS_PATH_MAX];
+    if (name_start >= sizeof(dir)) {
+        return FS_ERR_NAME;
+    }
+    memcpy(dir, path, name_start);
+    dir[name_start] = '\0';
+
+    mutex_lock(&fs_lock);
+    int found = resolve(from, dir, out_parent) && is_dir(*out_parent);
+    mutex_unlock(&fs_lock);
+    return found ? FS_OK : FS_ERR_NOTDIR;
+}
+
+uint32_t fs_read(const fs_entry_t *entry, void *buf) {
+    mutex_lock(&fs_lock);
+    uint32_t result = read_entry(entry, buf);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int32_t fs_create(int32_t parent, const char *name) {
+    mutex_lock(&fs_lock);
+    int32_t result = new_entry(parent, name, FS_TYPE_FILE);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int32_t fs_mkdir(int32_t parent, const char *name) {
+    mutex_lock(&fs_lock);
+    int32_t result = new_entry(parent, name, FS_TYPE_DIR);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int fs_write_file(int32_t index, const void *data, uint32_t size, int mode) {
+    mutex_lock(&fs_lock);
+    int result = write_file(index, data, size, mode);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int fs_delete(int32_t index) {
+    mutex_lock(&fs_lock);
+    int result = delete_entry(index);
+    mutex_unlock(&fs_lock);
+    return result;
+}
+
+int fs_rename(int32_t index, int32_t new_parent, const char *new_name) {
+    mutex_lock(&fs_lock);
+    int result = rename_entry(index, new_parent, new_name);
+    mutex_unlock(&fs_lock);
+    return result;
 }

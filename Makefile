@@ -16,9 +16,9 @@ KERNEL_OBJS = $(patsubst kernel/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS)) \
               $(patsubst kernel/%.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRCS))
 KERNEL_HEADERS = $(wildcard kernel/include/*.h)
 
-FS_FILES = $(wildcard fs/*)
+FS_FILES = $(shell find fs)
 
-.PHONY: all clean run run-headless
+.PHONY: all clean run run-headless reset-fs
 
 all: $(BUILD_DIR)/TheOS.img
 
@@ -44,10 +44,10 @@ $(BUILD_DIR)/kernel.elf: $(KERNEL_OBJS) kernel/linker.ld
 $(BUILD_DIR)/kernel.bin: $(BUILD_DIR)/kernel.elf
 	$(OBJCOPY) -O binary $< $@
 
-$(BUILD_DIR)/fs.img: scripts/build_fs.sh $(FS_FILES) | $(BUILD_DIR)
+$(BUILD_DIR)/fs.img: scripts/build_fs.sh scripts/mkfs_tofs.py scripts/layout.sh $(FS_FILES) | $(BUILD_DIR)
 	bash scripts/build_fs.sh $(BUILD_DIR) fs
 
-$(BUILD_DIR)/TheOS.img: $(BUILD_DIR)/boot.bin $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/fs.img scripts/build_image.sh
+$(BUILD_DIR)/TheOS.img: $(BUILD_DIR)/boot.bin $(BUILD_DIR)/stage2.bin $(BUILD_DIR)/kernel.bin $(BUILD_DIR)/fs.img scripts/build_image.sh scripts/layout.sh
 	bash scripts/build_image.sh $(BUILD_DIR)
 
 run: all
@@ -55,6 +55,11 @@ run: all
 
 run-headless: all
 	$(QEMU) -drive format=raw,file=$(BUILD_DIR)/TheOS.img -display none -serial stdio -no-reboot
+
+# Discards files written inside the OS and starts again from fs/.
+reset-fs:
+	rm -f $(BUILD_DIR)/fs.img $(BUILD_DIR)/TheOS.img
+	$(MAKE) all
 
 clean:
 	rm -rf $(BUILD_DIR)

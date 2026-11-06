@@ -35,17 +35,23 @@ void cmd_mv(const char *arg) {
         return;
     }
 
+    if (src_index == FS_ROOT) {
+        vga_print("mv: cannot move the root directory\n");
+        return;
+    }
+
     int32_t new_parent;
-    const char *new_name;
-    char keep_name[FS_NAME_LEN];
+    char new_name[FS_NAME_LEN];
     int32_t maybe_dir;
     if (fs_resolve(cwd_get(), dest, &maybe_dir) && fs_is_dir(maybe_dir)) {
         new_parent = maybe_dir;
-        strncpy(keep_name, fs_entry_at((uint32_t)src_index)->name, FS_NAME_LEN);
-        new_name = keep_name;
+        strncpy(new_name, fs_entry_at((uint32_t)src_index)->name, FS_NAME_LEN);
     } else {
-        new_parent = cwd_get();
-        new_name = dest;
+        int err = fs_split_path(cwd_get(), dest, &new_parent, new_name);
+        if (err < 0) {
+            print_fs_error("mv", err);
+            return;
+        }
     }
 
     int err = fs_rename(src_index, new_parent, new_name);

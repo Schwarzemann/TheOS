@@ -6,10 +6,16 @@
 
 void cmd_touch(const char *arg) {
     if (arg[0] == '\0') {
-        vga_print("usage: touch <name>\n");
+        vga_print("usage: touch <path>\n");
         return;
     }
-    int32_t result = fs_create(cwd_get(), arg);
+
+    int32_t parent;
+    char name[FS_NAME_LEN];
+    int32_t result = fs_split_path(cwd_get(), arg, &parent, name);
+    if (result == FS_OK) {
+        result = fs_create(parent, name);
+    }
     if (result < 0) {
         print_fs_error("touch", result);
     }

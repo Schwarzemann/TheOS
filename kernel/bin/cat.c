@@ -19,6 +19,9 @@ void cmd_cat(const char *arg) {
     }
 
     const fs_entry_t *e = fs_entry_at((uint32_t)index);
+    if (e->size_bytes == 0) {
+        return;
+    }
     char *buf = kmalloc(fs_sectors(e) * 512);
     if (buf == 0) {
         vga_print("cat: out of memory\n");
@@ -26,7 +29,7 @@ void cmd_cat(const char *arg) {
     }
     uint32_t size = fs_read(e, buf);
     vga_print_n(buf, size);
-    if (size == 0 || buf[size - 1] != '\n') {
+    if (buf[size - 1] != '\n') {
         vga_putc('\n');
     }
     kfree(buf);

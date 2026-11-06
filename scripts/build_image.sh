@@ -33,19 +33,32 @@ if [ "$kernel_size" -gt "$kernel_max" ]; then
     exit 1
 fi
 
-rm -f "$IMG"
-cp "$BOOT_BIN" "$IMG"
-truncate -s "$SECTOR_SIZE" "$IMG"
-
-dd if="$STAGE2_BIN" of="$IMG" bs="$SECTOR_SIZE" seek="$STAGE2_LBA" conv=notrunc status=none
-truncate -s $(( KERNEL_LBA * SECTOR_SIZE )) "$IMG"
-
-dd if="$KERNEL_BIN" of="$IMG" bs="$SECTOR_SIZE" seek="$KERNEL_LBA" conv=notrunc status=none
-truncate -s $(( FS_BASE_LBA * SECTOR_SIZE )) "$IMG"
-
 fs_size=$(stat -c%s "$FS_IMG")
-fs_sectors=$(( fs_size / SECTOR_SIZE ))
-dd if="$FS_IMG" of="$IMG" bs="$SECTOR_SIZE" seek="$FS_BASE_LBA" conv=notrunc status=none
-truncate -s $(( (FS_BASE_LBA + fs_sectors) * SECTOR_SIZE )) "$IMG"
+img_size=$(( FS_BASE_LBA * SECTOR_SIZE + fs_size ))
+
+# The TOFS region of an existing image holds files written inside the OS, so
+# keep it unless fs.img changed (fs/ or the format was edited) or it can't be
+# this layout's filesystem.
+keep_fs=0
+if [ -f "$IMG" ] && [ ! "$FS_IMG" -nt "$IMG" ] && [ "$(stat -c%s "$IMG")" -eq "$img_size" ] &&
+   [ "$(dd if="$IMG" bs=1 skip=$(( FS_BASE_LBA * SECTOR_SIZE )) count=4 status=none)" = "TOFS" ]; then
+    keep_fs=1
+fi
+
+if [ "$keep_fs" -eq 1 ]; then
+    echo "Keeping the filesystem in $IMG (make reset-fs to start again from fs/)"
+    dd if=/dev/zero of="$IMG" bs="$SECTOR_SIZE" count="$FS_BASE_LBA" conv=notrunc status=none
+else
+    if [ -f "$IMG" ]; then
+        echo "Replacing the filesystem in $IMG from fs/: files written inside the OS are discarded"
+    fi
+    rm -f "$IMG"
+    truncate -s "$img_size" "$IMG"
+    dd if="$FS_IMG" of="$IMG" bs="$SECTOR_SIZE" seek="$FS_BASE_LBA" conv=notrunc status=none
+fi
+
+dd if="$BOOT_BIN" of="$IMG" bs="$SECTOR_SIZE" seek="$BOOT_LBA" conv=notrunc status=none
+dd if="$STAGE2_BIN" of="$IMG" bs="$SECTOR_SIZE" seek="$STAGE2_LBA" conv=notrunc status=none
+dd if="$KERNEL_BIN" of="$IMG" bs="$SECTOR_SIZE" seek="$KERNEL_LBA" conv=notrunc status=none
 
 echo "Built $IMG ($(stat -c%s "$IMG") bytes)"

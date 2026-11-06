@@ -1,6 +1,7 @@
 #include <ata.h>
 #include <io.h>
 #include <panic.h>
+#include <sync.h>
 
 #define ATA_DATA        0x1F0
 #define ATA_FEATURES    0x1F1
@@ -19,6 +20,9 @@
 #define ATA_CMD_READ         0x20
 #define ATA_CMD_WRITE        0x30
 #define ATA_CMD_CACHE_FLUSH  0xE7
+
+/* The drive handles one command at a time, across several port accesses. */
+static mutex_t ata_lock;
 
 static void ata_select(uint32_t lba) {
     outb(ATA_DRIVE_HEAD, (uint8_t)(0xE0 | ((lba >> 24) & 0x0F)));
@@ -55,9 +59,11 @@ static void ata_read_one(uint32_t lba, uint16_t *buf) {
 
 void ata_read(uint32_t lba, uint32_t count, void *buf) {
     uint16_t *dst = (uint16_t *)buf;
+    mutex_lock(&ata_lock);
     for (uint32_t i = 0; i < count; i++) {
         ata_read_one(lba + i, dst + i * 256);
     }
+    mutex_unlock(&ata_lock);
 }
 
 static void ata_wait_ready(void) {
@@ -101,6 +107,7 @@ static void ata_write_one(uint32_t lba, const uint16_t *buf) {
 
 void ata_write(uint32_t lba, uint32_t count, const void *buf) {
     const uint16_t *src = (const uint16_t *)buf;
+    mutex_lock(&ata_lock);
     for (uint32_t i = 0; i < count; i++) {
         ata_write_one(lba + i, src + i * 256);
     }
@@ -108,4 +115,5 @@ void ata_write(uint32_t lba, uint32_t count, const void *buf) {
      * report success (matters for the backing disk image, not just RAM). */
     outb(ATA_COMMAND, ATA_CMD_CACHE_FLUSH);
     ata_wait_ready();
+    mutex_unlock(&ata_lock);
 }

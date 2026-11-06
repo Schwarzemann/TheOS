@@ -3,8 +3,8 @@
 
 void kbd_init(void);
 
-/* Blocks (halting the CPU between interrupts) until a key is available,
- * then returns its ASCII value. */
+/* Blocks the calling task until a key is available, then returns its ASCII
+ * value. Needs the scheduler running. */
 char kbd_getc(void);
 
 #endif

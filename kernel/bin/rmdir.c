@@ -24,6 +24,11 @@ void cmd_rmdir(const char *arg) {
         return;
     }
 
+    if (index == cwd_get()) {
+        vga_print("rmdir: cannot remove the current directory\n");
+        return;
+    }
+
     int err = fs_delete(index);
     if (err < 0) {
         print_fs_error("rmdir", err);

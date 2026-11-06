@@ -2,6 +2,7 @@
 #include <io.h>
 #include <serial.h>
 #include <string.h>
+#include <sync.h>
 
 #define VGA_CRTC_IDX  0x3D4
 #define VGA_CRTC_DATA 0x3D5
@@ -11,7 +12,10 @@
 static int cursor_row;
 static int cursor_col;
 
-void vga_set_cursor(int row, int col) {
+/* Guards the cursor and screen, and keeps each print call's text together. */
+static mutex_t vga_lock;
+
+static void set_cursor(int row, int col) {
     cursor_row = row;
     cursor_col = col;
     unsigned short pos = (unsigned short)(row * VGA_COLS + col);
@@ -21,17 +25,25 @@ void vga_set_cursor(int row, int col) {
     outb(VGA_CRTC_DATA, (unsigned char)(pos & 0xFF));
 }
 
+void vga_set_cursor(int row, int col) {
+    mutex_lock(&vga_lock);
+    set_cursor(row, col);
+    mutex_unlock(&vga_lock);
+}
+
 static void put_cell(int row, int col, char c) {
     VGA_MEMORY[row * VGA_COLS + col] = (unsigned short)((VGA_ATTR << 8) | (unsigned char)c);
 }
 
 void vga_clear(void) {
+    mutex_lock(&vga_lock);
     for (int row = 0; row < VGA_ROWS; row++) {
         for (int col = 0; col < VGA_COLS; col++) {
             put_cell(row, col, ' ');
         }
     }
-    vga_set_cursor(0, 0);
+    set_cursor(0, 0);
+    mutex_unlock(&vga_lock);
 }
 
 static void scroll(void) {
@@ -43,7 +55,7 @@ static void scroll(void) {
     cursor_row = VGA_ROWS - 1;
 }
 
-void vga_putc(char c) {
+static void putc_unlocked(char c) {
     serial_putc(c); /* mirror the screen console to the serial debug log */
 
     if (c == '\n') {
@@ -68,19 +80,29 @@ void vga_putc(char c) {
     if (cursor_row >= VGA_ROWS) {
         scroll();
     }
-    vga_set_cursor(cursor_row, cursor_col);
+    set_cursor(cursor_row, cursor_col);
+}
+
+void vga_putc(char c) {
+    mutex_lock(&vga_lock);
+    putc_unlocked(c);
+    mutex_unlock(&vga_lock);
 }
 
 void vga_print(const char *str) {
+    mutex_lock(&vga_lock);
     for (size_t i = 0; str[i] != '\0'; i++) {
-        vga_putc(str[i]);
+        putc_unlocked(str[i]);
     }
+    mutex_unlock(&vga_lock);
 }
 
 void vga_print_n(const char *data, size_t n) {
+    mutex_lock(&vga_lock);
     for (size_t i = 0; i < n; i++) {
-        vga_putc(data[i]);
+        putc_unlocked(data[i]);
     }
+    mutex_unlock(&vga_lock);
 }
 
 void vga_print_uint(unsigned int value) {

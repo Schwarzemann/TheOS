@@ -11,8 +11,13 @@ Requires `nasm`, `gcc` (with 32-bit support, `-m32`), `ld`, `objcopy`,
 make all              # build and leave it as it is without running it
 make run              # build and boot in QEMU with a graphical window
 make run-headless      # build and boot with serial output on stdout, no display
+make reset-fs         # discard files written inside the OS, start again from fs/
 make clean
 ```
+
+Files written inside the OS are stored in `build/TheOS.img` and survive kernel
+rebuilds. Changing anything under `fs/` or the TOFS tools replaces them with a
+fresh filesystem, as do `make reset-fs` and `make clean`.
 
 ## Known limitations / what's not here
 
@@ -25,7 +30,8 @@ These will be added in the future:
 - **No demand paging, swapping, or copy-on-write.** Every mapped page
   is backed by a real frame up front; a page fault is always a bug and
   always panics.
-- **Filesystem supports persistent read/write** but still fixed at build time.
+- **Filesystem supports persistent read/write** but its 4 MiB size and
+  64-entry limit are fixed at build time.
 - **No ELF loading.** User-mode code is kernel-linked and jumped to
   directly; there's no loader for separately-compiled user binaries.
 - **Single CPU, no SMP.**

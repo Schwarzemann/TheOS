@@ -3,6 +3,7 @@
 #include <panic.h>
 #include <serial.h>
 #include <string.h>
+#include <sync.h>
 #include <stdint.h>
 
 #define HEAP_MAX_FRAMES (1024)        /* up to 4 MiB */
@@ -63,6 +64,7 @@ void *kmalloc(size_t size) {
     }
     size = align_up(size);
 
+    uint32_t flags = irq_save();
     for (blk_hdr_t *b = first_block; b != 0; b = b->next) {
         if (b->used || b->size < size) {
             continue;
@@ -81,9 +83,11 @@ void *kmalloc(size_t size) {
         }
 
         b->used = 1;
+        irq_restore(flags);
         return (void *)((uint8_t *)b + sizeof(blk_hdr_t));
     }
 
+    irq_restore(flags);
     return 0; /* out of heap memory */
 }
 
@@ -92,20 +96,37 @@ void kfree(void *ptr) {
         return;
     }
     blk_hdr_t *b = (blk_hdr_t *)((uint8_t *)ptr - sizeof(blk_hdr_t));
+
+    uint32_t flags = irq_save();
     b->used = 0;
 
     while (b->next != 0 && !b->next->used) {
         b->size += sizeof(blk_hdr_t) + b->next->size;
         b->next = b->next->next;
     }
+
+    /* The list is singly linked, so finding the previous block means walking it. */
+    if (b != first_block) {
+        blk_hdr_t *prev = first_block;
+        while (prev->next != b) {
+            prev = prev->next;
+        }
+        if (!prev->used) {
+            prev->size += sizeof(blk_hdr_t) + b->size;
+            prev->next = b->next;
+        }
+    }
+    irq_restore(flags);
 }
 
 size_t heap_free_bytes(void) {
     size_t total = 0;
+    uint32_t flags = irq_save();
     for (blk_hdr_t *b = first_block; b != 0; b = b->next) {
         if (!b->used) {
             total += b->size;
         }
     }
+    irq_restore(flags);
     return total;
 }

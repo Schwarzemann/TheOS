@@ -4,6 +4,10 @@
 #include <task.h>
 
 static void sys_dispatch(registers_t *regs) {
+    /* The interrupt gate turned these off, but a syscall runs on this task's own
+     * kernel stack and can take a long time, so it stays preemptible. */
+    __asm__ volatile ("sti");
+
     switch (regs->eax) {
         case SYS_WRITE:
             vga_print((const char *)regs->ebx); /* vga_putc mirrors to serial too */

@@ -3,7 +3,6 @@
 
 #include <usermode.h>
 #include <task.h>
-#include <heap.h>
 #include <syscall.h>
 #include <panic.h>
 
@@ -31,7 +30,7 @@ static void ring3_entry(void) {
 
 /* Kernel task that drops to ring3 on its own user stack. */
 static void user_demo_entry(void) {
-    uint8_t *stack = kmalloc(USER_STACK_SZ);
+    uint8_t *stack = task_alloc_user_stack(USER_STACK_SZ);
     if (stack == 0) {
         panic("user_demo: out of memory for the user stack");
     }

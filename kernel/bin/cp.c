@@ -41,16 +41,17 @@ void cmd_cp(const char *arg) {
     }
 
     int32_t dest_parent;
-    const char *dest_name;
-    char keep_name[FS_NAME_LEN];
+    char dest_name[FS_NAME_LEN];
     int32_t maybe_dir;
     if (fs_resolve(cwd_get(), dest, &maybe_dir) && fs_is_dir(maybe_dir)) {
         dest_parent = maybe_dir;
-        strncpy(keep_name, fs_entry_at((uint32_t)src_index)->name, FS_NAME_LEN);
-        dest_name = keep_name;
+        strncpy(dest_name, fs_entry_at((uint32_t)src_index)->name, FS_NAME_LEN);
     } else {
-        dest_parent = cwd_get();
-        dest_name = dest;
+        int split_err = fs_split_path(cwd_get(), dest, &dest_parent, dest_name);
+        if (split_err < 0) {
+            print_fs_error("cp", split_err);
+            return;
+        }
     }
 
     const fs_entry_t *src_entry = fs_entry_at((uint32_t)src_index);

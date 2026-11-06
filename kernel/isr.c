@@ -93,9 +93,13 @@ void isr_handler(registers_t *regs) {
 void irq_handler(registers_t *regs) {
     int irq = (int)regs->int_no - 32;
 
+    /* Must come before the handler: the timer handler can switch to a brand-new
+     * task that never returns here, which would leave the PIC blocking this IRQ
+     * and every lower-priority one. Interrupts stay off until the task's iret or
+     * saved EFLAGS re-enables them, so this can't nest. */
+    pic_eoi(irq);
+
     if (irq_handlers[irq] != 0) {
         irq_handlers[irq](regs);
     }
-
-    pic_eoi(irq);
 }

@@ -2,6 +2,8 @@
 #include <isr.h>
 #include <io.h>
 #include <serial.h>
+#include <sync.h>
+#include <task.h>
 
 #define KBD_DATA_PORT   0x60
 
@@ -15,6 +17,7 @@
 static volatile char buf[KBD_BUF_SIZE];
 static volatile unsigned int head, tail;
 static int shift_held;
+static const char input_chan; /* tasks waiting for input block on its address */
 
 /* US QWERTY scan set 1, make codes only. */
 static const char unshifted_map[] = {
@@ -46,6 +49,7 @@ static void push(char c) {
     }
     buf[head] = c;
     head = next;
+    task_wake_all(&input_chan);
 }
 
 static void kbd_irq(registers_t *regs) {
@@ -101,11 +105,13 @@ void kbd_init(void) {
 }
 
 char kbd_getc(void) {
+    uint32_t flags = irq_save();
     while (head == tail) {
-        __asm__ volatile ("sti; hlt");
+        task_block_on(&input_chan);
     }
     char c = buf[tail];
     tail = (tail + 1) % KBD_BUF_SIZE;
+    irq_restore(flags);
     return c;
 }
 

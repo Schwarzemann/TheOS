@@ -49,6 +49,9 @@ typedef struct {
 } fs_entry_t;
 
 void fs_init(void);
+
+/* The calls below are safe from any task, but fs_entry_at's pointer isn't
+ * covered by the lock: another task's changes can show through it. */
 uint32_t fs_entry_count(void);
 const fs_entry_t *fs_entry_at(uint32_t index);
 
@@ -62,6 +65,12 @@ int32_t fs_find_child(int32_t dir, const char *name);
 /* Resolves `path` (absolute, or relative to `from`), handling "." and "..".
  * Writes the result to *out_index and returns 1, or 0 if a component is missing. */
 int fs_resolve(int32_t from, const char *path, int32_t *out_index);
+
+/* Splits `path` (absolute, or relative to `from`) into the directory holding its
+ * last component, which must exist, and that component's name, for creating or
+ * moving something there. out_name must hold FS_NAME_LEN bytes. Returns FS_OK,
+ * FS_ERR_NOTDIR if the directory is missing, or FS_ERR_NAME. */
+int fs_split_path(int32_t from, const char *path, int32_t *out_parent, char *out_name);
 
 /* Reads an entry's full contents into buf, which must be at least
  * fs_sectors(entry) * 512 bytes. Returns the file size in bytes. */

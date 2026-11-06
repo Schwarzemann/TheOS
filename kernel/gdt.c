@@ -46,9 +46,11 @@ static void gdt_set_gate(int i, uint32_t base, uint32_t limit, uint8_t access, u
 
 static void write_tss(int i, uint16_t ss0, uint32_t esp0) {
     uint32_t base = (uint32_t)&tss;
-    uint32_t limit = base + sizeof(tss);
+    uint32_t limit = sizeof(tss) - 1;
 
-    gdt_set_gate(i, base, limit, 0xE9, 0x00);
+    /* Present, DPL 0, 32-bit TSS. iomap_base points past the limit below, so
+     * there is no I/O bitmap and ring3 port access always faults. */
+    gdt_set_gate(i, base, limit, 0x89, 0x00);
 
     memset(&tss, 0, sizeof(tss));
     tss.ss0 = ss0;
