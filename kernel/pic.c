@@ -10,6 +10,7 @@
 #define ICW1_ICW4 0x01
 #define ICW4_8086 0x01
 #define PIC_EOI   0x20
+#define OCW3_READ_ISR 0x0B
 
 /* The BIOS maps the PIC to interrupts 0x08-0x0F, which collide with
  * CPU exception vectors; remap IRQ0-15 to 0x20-0x2F instead. */
@@ -58,4 +59,10 @@ void pic_unmask(int irq) {
     uint16_t port = irq < 8 ? PIC1_DATA : PIC2_DATA;
     uint8_t bit = (uint8_t)(irq < 8 ? irq : irq - 8);
     outb(port, (uint8_t)(inb(port) & ~(1 << bit)));
+}
+
+uint16_t pic_read_isr(void) {
+    outb(PIC1_CMD, OCW3_READ_ISR);
+    outb(PIC2_CMD, OCW3_READ_ISR);
+    return (uint16_t)((inb(PIC2_CMD) << 8) | inb(PIC1_CMD));
 }

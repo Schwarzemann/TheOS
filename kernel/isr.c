@@ -93,6 +93,17 @@ void isr_handler(registers_t *regs) {
 void irq_handler(registers_t *regs) {
     int irq = (int)regs->int_no - 32;
 
+    /* Noise on an IRQ line can make a PIC raise its lowest-priority IRQ (7 or 15)
+     * with nothing in service. It gets no EOI, which could otherwise acknowledge
+     * a real interrupt that is still being handled. A spurious 15 did come
+     * through the master's cascade line, so the master still needs one. */
+    if ((irq == 7 || irq == 15) && !(pic_read_isr() & (1 << irq))) {
+        if (irq == 15) {
+            pic_eoi(2);
+        }
+        return;
+    }
+
     /* Must come before the handler: the timer handler can switch to a brand-new
      * task that never returns here, which would leave the PIC blocking this IRQ
      * and every lower-priority one. Interrupts stay off until the task's iret or

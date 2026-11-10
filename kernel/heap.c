@@ -10,11 +10,15 @@
 #define HEAP_MIN_FRAMES (64)          /* 256 KiB floor; heap_init() panics below it */
 #define HEAP_ALIGN 8
 
+/* Aligned so the header's size is a multiple of HEAP_ALIGN: the arena starts on
+ * a frame boundary and every size is rounded up, so payloads stay aligned too. */
 typedef struct blk_hdr {
     size_t size;                  /* usable bytes after this header */
     int used;
     struct blk_hdr *next;
-} blk_hdr_t;
+} __attribute__((aligned(HEAP_ALIGN))) blk_hdr_t;
+
+_Static_assert(sizeof(blk_hdr_t) % HEAP_ALIGN == 0, "heap header breaks payload alignment");
 
 static uint8_t *heap_start;
 static size_t heap_size;

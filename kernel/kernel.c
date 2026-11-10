@@ -23,6 +23,7 @@
 
 #define CMD_BUF_SIZE 64
 #define PATH_SIZE 128
+#define MOTD_PATH "/etc/motd.txt"
 
 /* TOFS is always mounted as drive "T"; TheOS doesn't support multiple drives yet. */
 static void print_prompt(void) {
@@ -42,8 +43,32 @@ static void print_verse(void) {
     vga_print("light shineth in darkness; and the darkness comprehended it not.\n\n");
 }
 
+/* Prints MOTD_PATH, if there is one. */
+static void print_motd(void) {
+    int32_t index;
+    if (!fs_resolve(FS_ROOT, MOTD_PATH, &index) || fs_is_dir(index)) {
+        return;
+    }
+    const fs_entry_t *e = fs_entry_at((uint32_t)index);
+    if (e->size_bytes == 0) {
+        return;
+    }
+    char *buf = kmalloc(fs_sectors(e) * 512);
+    if (buf == 0) {
+        return;
+    }
+    uint32_t size = fs_read(e, buf);
+    vga_print_n(buf, size);
+    if (buf[size - 1] != '\n') {
+        vga_putc('\n');
+    }
+    vga_putc('\n');
+    kfree(buf);
+}
+
 static void shell(void) {
     print_verse();
+    print_motd();
     vga_print("TheOS booted. Type 'help' for a list of commands.\n");
     print_prompt();
 

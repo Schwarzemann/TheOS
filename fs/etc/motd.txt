@@ -1,1 +1,1 @@
-You're looking at TheOS's own read-only filesystem.
+Files you write in TheOS are saved to disk and kept across reboots.
