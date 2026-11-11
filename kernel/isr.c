@@ -4,6 +4,7 @@
 #include <panic.h>
 #include <serial.h>
 #include <string.h>
+#include <task.h>
 
 static isr_handler_t isr_handlers[256];
 static isr_handler_t irq_handlers[16];
@@ -75,11 +76,26 @@ static void dump_and_panic(registers_t *regs) {
     panic(msg);
 }
 
+/* An exception raised by ring3 code is that program's fault, not the kernel's. */
+static void kill_user_task(registers_t *regs) {
+    char buf[9];
+    char msg[96];
+    msg[0] = '\0';
+    strcat(msg, exc_msgs[regs->int_no]);
+    strcat(msg, " at eip=0x");
+    utoa(regs->eip, buf, 16);
+    strcat(msg, buf);
+    task_kill_current(msg);
+}
+
 void isr_handler(registers_t *regs) {
     if (regs->int_no < 32) {
         if (isr_handlers[regs->int_no] != 0) {
             isr_handlers[regs->int_no](regs);
             return;
+        }
+        if ((regs->cs & 3) == 3) {
+            kill_user_task(regs);
         }
         dump_and_panic(regs);
         return;

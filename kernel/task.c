@@ -7,14 +7,37 @@
 #include <serial.h>
 #include <string.h>
 #include <sync.h>
+#include <paging.h>
+#include <pmm.h>
+#include <vga.h>
 
 #define TASK_STACK_SZ (16 * 1024)
 #define IDLE_TASK 0
+
+/* 64 KiB of address space per slot; at most 15 pages are mapped at the bottom of
+ * it, so there's always an unmapped page above each stack and below the next. */
+#define USER_STACK_SLOT ((TASK_USER_STACK_MAX_PAGES + 1) * PAGE_SIZE)
 
 extern void task_switch(uint32_t *old_esp_store, uint32_t new_esp);
 
 static task_t tasks[TASK_MAX];
 static int current_task = -1;
+
+static uint32_t user_stack_base(int id) {
+    return USER_STACKS_BASE + (uint32_t)id * USER_STACK_SLOT;
+}
+
+static void unmap_user_stack(int id) {
+    for (uint32_t i = 0; i < tasks[id].user_stack_pages; i++) {
+        uint32_t va = user_stack_base(id) + i * PAGE_SIZE;
+        uint32_t pte = paging_lookup(va);
+        paging_unmap(va);
+        if (pte != 0) {
+            pmm_free(pte & ~(uint32_t)(PAGE_SIZE - 1));
+        }
+    }
+    tasks[id].user_stack_pages = 0;
+}
 
 /* Frees the stacks and slots of dead tasks. A task can't free the stack it is
  * running on, so this happens later, from another task. */
@@ -23,7 +46,7 @@ static void tasks_reap(void) {
     for (int i = 0; i < TASK_MAX; i++) {
         if (tasks[i].state == TASK_DEAD && i != current_task) {
             kfree(tasks[i].kstack);
-            kfree(tasks[i].user_stack);
+            unmap_user_stack(i);
             memset(&tasks[i], 0, sizeof(tasks[i]));
         }
     }
@@ -145,14 +168,55 @@ void task_wake_all(const void *chan) {
     }
 }
 
-void *task_alloc_user_stack(size_t size) {
-    void *stack = kmalloc(size);
-    tasks[current_task].user_stack = stack;
-    return stack;
+uint32_t task_map_user_stack(uint32_t pages) {
+    task_t *t = &tasks[current_task];
+    if (pages == 0 || pages > TASK_USER_STACK_MAX_PAGES || t->user_stack_pages != 0) {
+        return 0;
+    }
+    uint32_t base = user_stack_base(current_task);
+    for (uint32_t i = 0; i < pages; i++) {
+        uint32_t frame = pmm_alloc();
+        if (frame != 0) {
+            /* Zeroed through the identity map, so no old kernel data reaches ring3. */
+            memset((void *)frame, 0, PAGE_SIZE);
+            if (paging_map(base + i * PAGE_SIZE, frame, PAGE_USER | PAGE_WRITE) < 0) {
+                pmm_free(frame);
+                frame = 0;
+            }
+        }
+        if (frame == 0) {
+            unmap_user_stack(current_task);
+            return 0;
+        }
+        t->user_stack_pages = i + 1;
+    }
+    return base + pages * PAGE_SIZE;
+}
+
+void task_locks_changed(int delta) {
+    if (current_task >= 0) {
+        tasks[current_task].locks_held += delta;
+    }
+}
+
+__attribute__((noreturn)) void task_kill_current(const char *reason) {
+    char msg[224];
+    msg[0] = '\0';
+    strcat(msg, "[kernel] killed task '");
+    strcat(msg, tasks[current_task].name);
+    strcat(msg, "': ");
+    strncpy(msg + strlen(msg), reason, sizeof(msg) - strlen(msg) - 2);
+    msg[sizeof(msg) - 2] = '\0';
+    strcat(msg, "\n");
+    vga_print(msg);
+    task_exit();
 }
 
 __attribute__((noreturn)) void task_exit(void) {
     __asm__ volatile ("cli");
+    if (tasks[current_task].locks_held != 0) {
+        panic("task_exit: task still holds a lock");
+    }
     tasks[current_task].state = TASK_DEAD;
     switch_to_next();
 

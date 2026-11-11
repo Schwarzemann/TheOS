@@ -7,4 +7,7 @@ __attribute__((noreturn)) void enter_usermode(uint32_t entry, uint32_t user_stac
 
 void user_demo_spawn(void);
 
+/* Ring3 entry point of the demo program in kernel/user/demo.c. */
+void user_demo_main(void);
+
 #endif

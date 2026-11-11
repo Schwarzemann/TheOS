@@ -10,7 +10,7 @@ CFLAGS  = -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -fno-built
           -Wall -Wextra -Ikernel/include -c
 LDFLAGS = -m elf_i386 -T kernel/linker.ld -nostdlib
 
-KERNEL_C_SRCS  = $(wildcard kernel/*.c) $(wildcard kernel/bin/*.c)
+KERNEL_C_SRCS  = $(wildcard kernel/*.c) $(wildcard kernel/bin/*.c) $(wildcard kernel/user/*.c)
 KERNEL_ASM_SRCS = $(wildcard kernel/*.asm)
 KERNEL_OBJS = $(patsubst kernel/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRCS)) \
               $(patsubst kernel/%.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRCS))

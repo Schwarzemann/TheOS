@@ -1,6 +1,7 @@
 #include <pmm.h>
 #include <string.h>
 #include <panic.h>
+#include <sync.h>
 
 #define PMM_MAX_FRAMES (256 * 1024)
 
@@ -40,13 +41,16 @@ void pmm_init(uint32_t mem_kb) {
 }
 
 uint32_t pmm_alloc(void) {
+    uint32_t flags = irq_save();
     for (uint32_t frame = 0; frame < total_frames; frame++) {
         if (!is_used(frame)) {
             set_used(frame);
             free_count--;
+            irq_restore(flags);
             return frame * PMM_FRAME_SIZE;
         }
     }
+    irq_restore(flags);
     return 0;
 }
 
@@ -55,11 +59,13 @@ void pmm_free(uint32_t phys_addr) {
     if (frame >= total_frames) {
         panic("pmm_free: frame out of range");
     }
+    uint32_t flags = irq_save();
     if (!is_used(frame)) {
         panic("pmm_free: double free");
     }
     set_free(frame);
     free_count++;
+    irq_restore(flags);
 }
 
 uint32_t pmm_total(void) {

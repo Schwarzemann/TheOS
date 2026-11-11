@@ -114,6 +114,8 @@ static void heap_self_test(void) {
 }
 
 void kernel_main(void) {
+    boot_info_save(); /* before paging_init() unmaps the page it's in */
+
     serial_init();
     serial_write("TheOS: kernel_main entered\n");
 
@@ -136,7 +138,7 @@ void kernel_main(void) {
     kbd_init();
     serial_write("TheOS: keyboard driver ready\n");
 
-    pmm_init(BOOT_MEM_KB);
+    pmm_init(boot_mem_kb);
     serial_write("TheOS: PMM ready, ");
     serial_uint(pmm_free_count());
     serial_write(" free frames\n");

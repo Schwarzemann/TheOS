@@ -23,15 +23,17 @@ fresh filesystem, as do `make reset-fs` and `make clean`.
 
 These will be added in the future:
 
-- **No real process isolation.** Ring-3 tasks share the kernel's
-  identity-mapped address space (every page is marked user-accessible)
-  instead of getting their own page directory. Fine for the current demo,
-  not a security boundary.
+- **No process isolation between user tasks.** Kernel memory is
+  supervisor-only, page 0 is unmapped, syscalls check user pointers, and a
+  ring-3 fault kills only the faulting task. But all tasks still share one
+  page directory, so user tasks can read each other's stacks and the shared
+  user code region. Per-process address spaces come with ELF loading.
 - **No demand paging, swapping, or copy-on-write.** Every mapped page
-  is backed by a real frame up front; a page fault is always a bug and
-  always panics.
+  is backed by a real frame up front; a page fault in the kernel is always
+  a bug and always panics.
 - **Filesystem supports persistent read/write** but its 4 MiB size and
   64-entry limit are fixed at build time.
-- **No ELF loading.** User-mode code is kernel-linked and jumped to
-  directly; there's no loader for separately-compiled user binaries.
+- **No ELF loading.** User-mode code lives in `kernel/user/`, is linked
+  into the kernel image's user region and jumped to directly; there's no
+  loader for separately-compiled user binaries.
 - **Single CPU, no SMP.**

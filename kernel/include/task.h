@@ -6,6 +6,7 @@
 
 #define TASK_NAME_LEN 16
 #define TASK_MAX 8     /* includes the idle task */
+#define TASK_USER_STACK_MAX_PAGES 15
 
 typedef enum {
     TASK_FREE = 0,     /* unused slot */
@@ -18,7 +19,8 @@ typedef struct task {
     uint32_t esp;          /* saved stack pointer, valid when not current */
     uint32_t kstack_top;   /* top of this task's kernel stack - for TSS.esp0 */
     void *kstack;          /* kmalloc'd kernel stack, freed once the task is dead */
-    void *user_stack;      /* kmalloc'd ring3 stack, if the task has one */
+    uint32_t user_stack_pages; /* ring3 stack pages mapped by task_map_user_stack */
+    int locks_held;        /* mutexes held; exiting with any held is a bug */
     const void *wait_chan; /* what a TASK_BLOCKED task is waiting on */
     task_state_t state;
     char name[TASK_NAME_LEN];
@@ -46,9 +48,18 @@ void task_block_on(const void *chan);
 /* Makes every task blocked on chan runnable. Safe to call from an IRQ handler. */
 void task_wake_all(const void *chan);
 
-/* Allocates a ring3 stack that is freed when the running task dies. Returns
- * its lowest address, or 0 if out of memory. */
-void *task_alloc_user_stack(size_t size);
+/* Maps a ring3 stack of `pages` pages (at most TASK_USER_STACK_MAX_PAGES) for the
+ * running task, freed when it dies. Each task slot has its own range above
+ * USER_STACKS_BASE with unmapped pages on both sides, so overflowing the stack
+ * faults. Returns the stack's top address, or 0 if out of memory. */
+uint32_t task_map_user_stack(uint32_t pages);
+
+/* Kills the running task over a fault in its ring3 code: reports `reason` on
+ * the console and exits. Never returns. */
+__attribute__((noreturn)) void task_kill_current(const char *reason);
+
+/* For mutex_lock/unlock: adjusts the running task's held-lock count. */
+void task_locks_changed(int delta);
 
 /* Marks the currently running task dead and switches away. Never
  * returns. */

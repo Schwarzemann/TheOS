@@ -5,7 +5,7 @@
 
 #define PMM_FRAME_SIZE 4096
 
-/* mem_kb: total RAM in KiB, as detected by TheBOOT (BOOT_MEM_KB).
+/* mem_kb: total RAM in KiB, as detected by TheBOOT (boot_mem_kb).
  * Reserves frame 0 through the end of the kernel image automatically. */
 void pmm_init(uint32_t mem_kb);
 
